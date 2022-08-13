@@ -42,13 +42,17 @@ class Venue(db.Model):
     phone = db.Column(db.String(120), nullable=False)
     image_link = db.Column(db.String(500), nullable=False)
     facebook_link = db.Column(db.String(120), nullable=False)
+    seeking_link = db.Column(db.String(), nullable=False)
+    seeking_description = db.Column(db.String(), nullable=False)
+    shows = db.relationship('Show', backref='shown', lazy=True)
 
     # TODO: implement any missing fields, as a database migration using Flask-Migrate
 
     def __repr__(self):
         return f'<Venue {self.id}, name: {self.name}, city: {self.city} state: {self.state}, ' \
                f'address: {self.address}, ' \
-               f'phone: {self.phone}, image_link: {self.image_link}, facebook_link: {self.facebook_link}>'
+               f'phone: {self.phone}, image_link: {self.image_link}, facebook_link: {self.facebook_link},' \
+               f'seeking_link: {self.seeking_link}, seeking_description: {self.seeking_description}>'
 
 
 class Artist(db.Model):
@@ -62,16 +66,28 @@ class Artist(db.Model):
     genres = db.Column(db.String(120), nullable=False)
     image_link = db.Column(db.String(500), nullable=False)
     facebook_link = db.Column(db.String(120), nullable=False)
+    seeking_link = db.Column(db.String(), nullable=False)
+    seeking_description = db.Column(db.String(), nullable=False)
+    shows = db.relationship('Show', backref='show', lazy=True)
 
     # TODO: implement any missing fields, as a database migration using Flask-Migrate
 
     def __repr__(self):
         return f'<Artist_id: {self.id}, name: {self.name}, city: {self.city}, state: {self.state}, ' \
                f'phone: {self.phone}, genres: {self.genres}, image_link: {self.image_link}, ' \
-               f'facebook_link: {self.facebook_link}>'
+               f'facebook_link: {self.facebook_link}, seeking_link: {self.seeking_link}, ' \
+               f'seeking_description: {self.seeking_description}>'
 
 
 # TODO Implement Show and Artist models, and complete all model relationships and properties, as a database migration.
+
+class Show(db.Model):
+    __tablename__ = "show"
+    id = db.Column(db.Integer, primary_key=True)
+    start_time = db.Column(db.DateTime(), nullable=False)
+    artists_id = db.Column(db.Integer, db.ForeignKey('artist.id'), nullable=False)
+    venue_id = db.Column(db.Integer, db.ForeignKey('venue.id'), nullable=False)
+
 
 # ----------------------------------------------------------------------------#
 # Filters.
@@ -158,12 +174,14 @@ def show_venue(venue_id):
     if venue_search:
         venue_details = Venue.detail(venue_search)
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:S")
-        new_shows_query = Show.query.options(db.joinedload(Show.Venue))\
+        new_shows_query = Show.query.options(db.joinedload(Show.Venue)) \
             .filter(Show.venue_id == venue_id).filter(Show.start_item > current_time).all()
         new_show = list(map(Show.artist_details, new_shows_query))
         venue_details["new_coming_shows"] = new_show
         venue_details["upcoming_shows_count"] = len(new_show)
-        past_shows_query = Show.query.options(db.joinedloading(Show.venue)).filter(Show.venue_id == venue_id).filter(Show.start_item <= current_time).all()
+        past_shows_query = Show.query.options(db.joinedloading(Show.venue))\
+            .filter(Show.venue_id == venue_id).filter(
+            Show.start_item <= current_time).all()
         past_shows = list(map(Show.artist_details, past_shows_query))
         venue_details["past_shows"] = past_shows
         venue_details["past_shows_count"] = len(past_shows)
@@ -273,19 +291,19 @@ def show_artist(artist_id):
     if data_query:
         artists_details = Artist.details(data_query)
         time_current = datetime.now().strftime('%Y-%m-%d %H:%M')
-        show_query = Show.query.options(db.joinedload(Show.Artist))\
+        show_query = Show.query.options(db.joinedload(Show.Artist)) \
             .filter(Show.artist_id == artist_id).filter(Show.start_time > time_current).all()
         show_list = list(map(Show.venue_details, show_query))
         artists_details["new_coming_shows"] = show_list
         artists_details["upcoming_show_count"] = len(show_list)
-        p_show_query_data = Show.query.options(db.joinedload(Show.Artist))\
+        p_show_query_data = Show.query.options(db.joinedload(Show.Artist)) \
             .filter(Show.artist_id == artist_id).filter(Show.start_time <= time_current).all()
         p_show_data_list = list(map(Show.venue_details, p_show_query_data))
         artists_details["past_shows"] = p_show_data_list
         artists_details["p_show_count"] = len(p_show_data_list)
 
-    # data = list(filter(lambda d: d['id'] == artist_id, [data1, data2, data3]))[0]
-        return render_template('pages/show_artist.html', artist=data)
+        # data = list(filter(lambda d: d['id'] == artist_id, [data1, data2, data3]))[0]
+        return render_template('pages/show_artist.html', artist=data_query)
     return render_template('errors/404.html')
 
 
@@ -309,7 +327,7 @@ def edit_artist(artist_id):
         form.seeking_description.data = artist_details["seeking_description"]
         form.image_link.data = artist_details["image_link"]
 
-        return render_template('forms/edit_artist.html', form=form, artist=artist_details)
+        return render_template('forms/edit_artist.html', form=form, artist=artist_details_info)
     # TODO: populate form with fields from artist with ID <artist_id>
     return render_template('errors/404.html')
 
@@ -367,7 +385,7 @@ def edit_venue(venue_id):
         form.seeking_description.data = venue["seeking_description"]
         form.image_link.data = venue["image_link"]
 
-    # TODO: populate form with values from venue with ID <venue_id>
+        # TODO: populate form with values from venue with ID <venue_id>
         return render_template('forms/edit_venue.html', form=form, venue=venue)
     return render_template('errors/500.html')
 
@@ -440,12 +458,11 @@ def create_artist_submission():
             seeking_description=seeking_description,
         )
         Artist.insert(new_artist)
-
-    # on successful db insert, flash success
+        # on successful db insert, flash success
         flash('Artist ' + request.form['name'] + ' was successfully listed!')
     # TODO: on unsuccessful db insert, flash an error instead.
-    # e.g., flash('An error occurred. Artist ' + data.name + ' could not be listed.')
     except SQLAlchemyError as e:
+        # e.g., flash('An error occurred. Artist ' + data.name + ' could not be listed.')
         flash('An error occurred. Artist ' + data.name + ' could not be listed.')
     return render_template('pages/home.html')
 
@@ -457,7 +474,7 @@ def create_artist_submission():
 def shows():
     # displays list of shows at /shows
     # TODO: replace with real venues data.
-    query_show = Show.query.options(db.joinedload(Show.Venue)), db.joinedload(Show.Artist).all()
+    query_show = Show.query.options(db.joinedload(Show.Venue)).all()
     data = list(map(Show.details, query_show))
 
     return render_template('pages/shows.html', shows=data)
@@ -481,7 +498,7 @@ def create_show_submission():
             start_time=request.form['start_time'],
         )
         Show.insert(new_show)
-    # on successful db insert, flash success
+        # on successful db insert, flash success
         flash('Show was successfully listed!')
     # TODO: on unsuccessful db insert, flash an error instead.
     except SQLAlchemyError as e:
